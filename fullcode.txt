@@ -1,0 +1,619 @@
+main.py FILE
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware # Added CORS import
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import os
+
+# 1. Load your secret keys from the .env file
+load_dotenv()
+
+app = FastAPI()
+
+# Added CORS middleware right after app initialization
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allows all origins (essential for your React frontend)
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 2. Connect to the Cloud Database
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
+
+@app.get("/")
+def check_server():
+    return {"message": "Campus-Ride Backend is running on Kali!"}
+
+@app.get("/test-connection")
+def get_landmarks():
+    # 3. Try to fetch data from your 'landmarks' table
+    try:
+        # Note: If your .env variables are missing, this will trigger the exception below
+        response = supabase.table("landmarks").select("*").execute()
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+APP.JSX FILE
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient('https://sopvxqbqtkyohntbiacz.supabase.co', 'sb_publishable_BuZnBVjaApsDADr_1DLyGQ_A0NrTmao');
+
+// --- CUSTOM STATUS MODAL ---
+const StatusModal = ({ message, type, onClose }) => {
+  if (!message) return null;
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border-t-8 border-[#F4A300]">
+        <div className={`text-4xl mb-4 ${type === 'error' ? 'text-red-500' : 'text-green-500'}`}>
+          {type === 'error' ? '⚠️' : '✅'}
+        </div>
+        <h3 className="text-xl font-bold text-gray-800 mb-2">
+          {type === 'error' ? 'Attention' : 'Success'}
+        </h3>
+        <p className="text-gray-600 mb-6">{message}</p>
+        <button 
+          onClick={onClose}
+          className="w-full py-3 rounded-xl bg-[#591F00] text-white font-bold hover:opacity-90 transition-all"
+        >
+          CONTINUE
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// --- COMMON AUTH COMPONENT ---
+const AuthPage = ({ role, title, primaryColor, accentColor }) => {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [plate, setPlate] = useState('');
+  const [transportType, setTransportType] = useState('Tricycle'); 
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState({ show: false, msg: '', type: '' });
+
+  const clearFields = () => {
+    setEmail(''); setPassword(''); setFullName(''); setPlate(''); setTransportType('Tricycle');
+  };
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({
+        email, password,
+        options: { 
+          data: { 
+            role, 
+            full_name: fullName, 
+            plate_number: role === 'driver' ? plate : null,
+            transport_type: role === 'driver' ? transportType : null 
+          } 
+        }
+      });
+      if (error) { setModal({ show: true, msg: error.message, type: 'error' }); clearFields(); setLoading(false); }
+      else { setModal({ show: true, msg: "Sign up successful!", type: 'success' }); clearFields(); setIsSignUp(false); setLoading(false); }
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) { setModal({ show: true, msg: error.message, type: 'error' }); clearFields(); setLoading(false); }
+      else {
+        if (data.user?.user_metadata?.role !== role) {
+          await supabase.auth.signOut();
+          setModal({ show: true, msg: `Access Denied: This is the ${role} portal.`, type: 'error' });
+          clearFields(); setLoading(false);
+        } else { window.location.reload(); }
+      }
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundColor: primaryColor }}>
+      <StatusModal message={modal.msg} type={modal.type} onClose={() => setModal({ show: false, msg: '', type: '' })} />
+      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border-t-8" style={{ borderColor: accentColor }}>
+        <div className="text-center mb-6">
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest">CUSTECH</h2>
+          <h1 className="text-2xl font-black uppercase" style={{ color: primaryColor }}>{title}</h1>
+        </div>
+        <form onSubmit={handleAuth} className="space-y-4">
+          {isSignUp && <input type="text" placeholder="Full Name" className="w-full p-3 border rounded-xl outline-none" value={fullName} onChange={(e) => setFullName(e.target.value)} required />}
+          <input type="email" placeholder="University Email" 
+            className="w-full p-3 border rounded-xl outline-none" 
+            value={email} 
+            onChange={(e) => setEmail(e.target.value)} 
+            required 
+          />
+          <input type="password" placeholder="Password" className="w-full p-3 border rounded-xl outline-none" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          
+          {isSignUp && role === 'driver' && (
+            <>
+              <input type="text" placeholder="Vehicle Plate Number" className="w-full p-3 border rounded-xl bg-orange-50" value={plate} onChange={(e) => setPlate(e.target.value)} required />
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Transport Vehicle Type</label>
+                <select 
+                  className="w-full p-3 border rounded-xl bg-orange-50 outline-none font-bold text-gray-700"
+                  value={transportType}
+                  onChange={(e) => setTransportType(e.target.value)}
+                  required
+                >
+                  <option value="Tricycle">Tricycle (Max 5 Seats)</option>
+                  <option value="Bus">Bus (Max 8 Seats)</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          <button type="submit" disabled={loading} className="w-full text-white py-4 rounded-xl font-bold transition-all" style={{ backgroundColor: primaryColor }}>
+            {loading ? "VERIFYING..." : (isSignUp ? 'CREATE ACCOUNT' : 'LOGIN TO SYSTEM')}
+          </button>
+        </form>
+        <button onClick={() => { setIsSignUp(!isSignUp); clearFields(); }} className="mt-6 w-full text-center text-sm font-semibold text-gray-600 underline">{isSignUp ? 'Login' : 'Create Account'}</button>
+      </div>
+    </div>
+  );
+};
+
+// --- DRIVER DASHBOARD ---
+const DriverDashboard = ({ user, landmarks }) => {
+  const [isOnline, setIsOnline] = useState(false);
+  const [pickup, setPickup] = useState('');
+  const [destination, setDestination] = useState('');
+  const vehicleType = user.user_metadata?.transport_type || 'Tricycle';
+  const maxSeats = vehicleType === 'Bus' ? 8 : 5;
+  
+  const [seats, setSeats] = useState(maxSeats);
+  const [bookedCount, setBookedCount] = useState(0); 
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState({ show: false, msg: '', type: '' });
+  
+  const [showSummary, setShowSummary] = useState(false);
+
+  useEffect(() => {
+    if (!isOnline) return;
+    const channel = supabase.channel(`driver-sync-${user.id}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'active_sessions', filter: `id=eq.${user.id}` }, 
+    (payload) => {
+      const dbSeats = payload.new.available_seats;
+      if (dbSeats < seats) {
+        setModal({ show: true, msg: `🔔 PASSENGER JOINED! A seat has been reserved in your ${vehicleType}.`, type: 'success' });
+        setBookedCount(maxSeats - dbSeats);
+      }
+      setSeats(dbSeats);
+    }).subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [isOnline, user.id, seats, vehicleType, maxSeats]);
+
+  const updateSession = async (onlineStatus, currentSeats) => {
+    if (onlineStatus && (!pickup || !destination)) return setModal({ show: true, msg: "Set Pickup AND Destination!", type: 'error' });
+    if (pickup === destination) return setModal({ show: true, msg: "Pickup and Destination cannot be the same!", type: 'error' });
+    
+    setLoading(true);
+    const { error } = await supabase.from('active_sessions').upsert({
+      id: user.id, 
+      full_name: user.user_metadata.full_name, 
+      plate_number: user.user_metadata.plate_number,
+      transport_type: vehicleType,
+      current_landmark: pickup, 
+      destination_landmark: destination, 
+      available_seats: currentSeats, 
+      is_online: onlineStatus, 
+      last_ping: new Date()
+    });
+    setLoading(false);
+    if (error) setModal({ show: true, msg: error.message, type: 'error' });
+    else setIsOnline(onlineStatus);
+  };
+
+  const handleModalClose = () => {
+    if (seats === 0) {
+      setShowSummary(true);
+    }
+    setModal({ show: false, msg: '', type: '' });
+  };
+
+  const maxAllowable = maxSeats - bookedCount;
+
+  if (isOnline && showSummary) {
+    return (
+      <div className="p-6 max-w-md mx-auto animate-in fade-in zoom-in duration-300">
+        <div className="bg-white rounded-3xl shadow-2xl border-2 border-[#591F00] overflow-hidden">
+          <div className="bg-[#591F00] p-5 text-center">
+            <h2 className="text-white font-black uppercase tracking-widest">Trip Summary</h2>
+            <p className="text-orange-400 text-[10px] font-bold uppercase">Ready for Departure</p>
+          </div>
+          
+          <div className="p-8 space-y-6">
+            <div className="text-center">
+              <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest">Vehicle Details</p>
+              <h3 className="text-xl font-black text-gray-800">{vehicleType} - {user.user_metadata?.plate_number}</h3>
+            </div>
+
+            <div className="bg-gray-50 rounded-2xl p-5 border border-dashed border-gray-300">
+              <div className="flex justify-between items-center mb-4">
+                <div className="text-left">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase">Driver Coming From</p>
+                  <p className="font-bold text-sm text-[#591F00]">{pickup}</p>
+                </div>
+                <div className="text-orange-500 font-bold text-xl px-2">➔</div>
+                <div className="text-right">
+                  <p className="text-[10px] text-gray-400 font-bold uppercase">Dropping At</p>
+                  <p className="font-bold text-sm text-[#591F00]">{destination}</p>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-gray-200 text-center">
+                <p className="text-[10px] font-black text-gray-600 uppercase">Passenger Capacity: {maxSeats}/{maxSeats}</p>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => {
+                setShowSummary(false);
+                setBookedCount(0);
+                updateSession(false, maxSeats);
+              }} 
+              className="w-full py-4 rounded-2xl bg-green-600 text-white font-black shadow-lg hover:bg-green-700 transition-all uppercase tracking-tighter"
+            >
+              FINISH TRIP & RESET
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-md mx-auto">
+      <StatusModal message={modal.msg} type={modal.type} onClose={handleModalClose} />
+      <div className="text-center mb-4">
+         <h2 className="text-xl font-bold text-gray-800 uppercase">{vehicleType} Management</h2>
+         <p className="text-[10px] font-bold text-orange-500">MAX CAPACITY: {maxSeats} SEATS</p>
+         {bookedCount > 0 && <p className="text-[10px] text-red-500 font-bold uppercase">{bookedCount} SEAT(S) ALREADY RESERVED</p>}
+      </div>
+      
+      <div className="space-y-4 mb-6">
+        <div>
+          <label className="text-[10px] font-bold text-gray-400 uppercase">Current Location (Pickup Point)</label>
+          <select className="w-full p-3 mt-1 border rounded-xl bg-gray-50 font-bold" onChange={(e) => setPickup(e.target.value)} disabled={isOnline}>
+            <option value="">Select Pickup...</option>
+            {landmarks.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] font-bold text-gray-400 uppercase">Heading To (Destination)</label>
+          <select className="w-full p-3 mt-1 border rounded-xl bg-gray-50 font-bold text-[#591F00]" onChange={(e) => setDestination(e.target.value)} disabled={isOnline}>
+            <option value="">Select Destination...</option>
+            {landmarks.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-3xl shadow-lg text-center mb-8 border border-gray-100">
+        <p className="text-gray-500 text-xs mb-2 uppercase font-bold">Available Seats</p>
+        <div className="flex items-center justify-center gap-6">
+          <button onClick={() => {
+            const nextVal = Math.max(0, seats - 1);
+            setSeats(nextVal); 
+            if(isOnline) updateSession(true, nextVal);
+          }} className="w-12 h-12 rounded-full bg-gray-100 text-2xl font-bold">-</button>
+          
+          <span className="text-5xl font-black text-[#591F00]">{seats}</span>
+          
+          <button 
+            disabled={seats >= maxAllowable}
+            onClick={() => {
+              const nextVal = Math.min(maxAllowable, seats + 1);
+              setSeats(nextVal); 
+              if(isOnline) updateSession(true, nextVal);
+            }} 
+            className={`w-12 h-12 rounded-full text-2xl font-bold ${seats >= maxAllowable ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-100 text-black'}`}
+          >
+            +
+          </button>
+        </div>
+        {seats >= maxAllowable && bookedCount > 0 && (
+          <p className="text-[9px] text-red-400 mt-2 font-bold uppercase">Reserved seats cannot be reopened manually</p>
+        )}
+      </div>
+      
+      <button onClick={() => updateSession(!isOnline, seats)} disabled={loading} className={`w-full py-5 rounded-2xl font-black text-xl shadow-xl ${isOnline ? 'bg-red-500 text-white' : 'bg-[#F4A300] text-black'}`}>
+        {loading ? "..." : (isOnline ? 'END LIVE' : 'GO LIVE')}
+      </button>
+    </div>
+  );
+};
+
+// --- STUDENT DASHBOARD ---
+const StudentDashboard = ({ user, landmarks }) => {
+  const [myDestination, setMyDestination] = useState(null);
+  const [availableDrivers, setAvailableDrivers] = useState([]);
+  const [joinLoading, setJoinLoading] = useState(null);
+  const [modal, setModal] = useState({ show: false, msg: '', type: '' });
+  
+  const [activeBooking, setActiveBooking] = useState(null);
+  const [pendingBooking, setPendingBooking] = useState(null);
+
+  // Recovery useEffect: Check if student already has a booking in the DB
+  useEffect(() => {
+    const checkExistingBooking = async () => {
+      const { data, error } = await supabase
+        .from('active_sessions')
+        .select('*')
+        .contains('booked_students', [user.id])
+        .eq('is_online', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        // Recovery logic: Use a default time or ideally you'd store the time in a separate table
+        setActiveBooking({ ...data, reservationTime: "Active Session" });
+      }
+    };
+    checkExistingBooking();
+  }, [user.id]);
+
+  useEffect(() => {
+    if (!myDestination || activeBooking) return;
+    const fetchDrivers = async () => {
+      const { data } = await supabase.from('active_sessions')
+        .select('*')
+        .eq('destination_landmark', myDestination)
+        .eq('is_online', true);
+      setAvailableDrivers(data || []);
+    };
+    fetchDrivers();
+    const channel = supabase.channel('db-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'active_sessions' }, () => fetchDrivers()).subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [myDestination, activeBooking]);
+
+  const handleJoinRide = async (driver) => {
+    if (driver.available_seats <= 0) return setModal({ show: true, msg: "No space left!", type: 'error' });
+    
+    // Safety check: Is student already in this driver's list?
+    if (driver.booked_students && driver.booked_students.includes(user.id)) {
+        return setModal({ show: true, msg: "You have already reserved a seat in this ride!", type: 'error' });
+    }
+
+    setJoinLoading(driver.id);
+    
+    // Logic: Append student ID to booked_students array and decrement seats
+    const updatedBookedList = driver.booked_students ? [...driver.booked_students, user.id] : [user.id];
+    
+    const { error } = await supabase.from('active_sessions')
+      .update({ 
+        available_seats: driver.available_seats - 1,
+        booked_students: updatedBookedList
+      })
+      .eq('id', driver.id);
+    
+    setJoinLoading(null);
+    if (error) {
+      setModal({ show: true, msg: error.message, type: 'error' });
+    } else {
+      const reservationTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setPendingBooking({ ...driver, reservationTime });
+      setModal({ show: true, msg: `Seat Reserved in ${driver.transport_type}! Please wait for the driver.`, type: 'success' });
+    }
+  };
+
+  const handleModalClose = () => {
+    if (pendingBooking) {
+      setActiveBooking(pendingBooking);
+      setPendingBooking(null);
+    }
+    setModal({ show: false, msg: '', type: '' });
+  };
+
+  const handleCompleteTrip = async () => {
+    await supabase.auth.signOut();
+    window.location.reload();
+  };
+
+  if (!myDestination) {
+    return (
+      <div className="p-6 max-w-md mx-auto">
+        <h2 className="text-xl font-bold mb-4 text-[#591F00]">Where are you going?</h2>
+        <div className="grid grid-cols-1 gap-3">
+          {landmarks.map(l => (
+            <button key={l.id} onClick={() => setMyDestination(l.name)} className="p-4 border border-gray-200 rounded-xl text-left bg-white shadow-sm font-bold text-gray-700 hover:border-[#F4A300]">
+              To: {l.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (activeBooking && !modal.show) {
+    return (
+      <div className="p-6 max-w-md mx-auto animate-in zoom-in-95 duration-300">
+        <div className="bg-white rounded-3xl shadow-2xl border-2 border-[#F4A300] overflow-hidden">
+          <div className="bg-[#F4A300] p-4 text-center">
+            <p className="font-black text-sm uppercase tracking-tighter">Trip Reservation</p>
+          </div>
+          <div className="p-6 text-center">
+            <div className="mb-2">
+               <p className="text-orange-500 text-[11px] font-black uppercase mb-1">Reserved At: {activeBooking.reservationTime}</p>
+            </div>
+            <div className="mb-4">
+              <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest">Your Driver</p>
+              <h3 className="text-2xl font-black text-gray-800">{activeBooking.full_name}</h3>
+              <p className="text-sm font-bold text-[#591F00]">{activeBooking.plate_number}</p>
+            </div>
+            
+            <div className="flex justify-between items-center bg-gray-50 p-4 rounded-2xl mb-6">
+              <div className="text-left w-1/2">
+                <p className="text-[10px] text-gray-400 font-bold uppercase">Driver Coming From</p>
+                <p className="font-bold text-xs text-gray-700">{activeBooking.current_landmark}</p>
+              </div>
+              <div className="text-orange-400 text-xl font-bold px-2">➔</div>
+              <div className="text-right w-1/2">
+                <p className="text-[10px] text-gray-400 font-bold uppercase">Dropping At</p>
+                <p className="font-bold text-xs text-gray-700">{activeBooking.destination_landmark}</p>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleCompleteTrip}
+              className="w-full py-4 rounded-xl bg-[#591F00] text-white font-bold shadow-lg active:scale-95 transition-transform"
+            >
+              COMPLETE TRIP
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-md mx-auto">
+      <StatusModal message={modal.msg} type={modal.type} onClose={handleModalClose} />
+      <button onClick={() => setMyDestination(null)} className="mb-4 text-[#591F00] font-bold text-sm underline flex items-center gap-1">← Change Destination</button>
+      <div className="bg-[#591F00]/5 p-4 rounded-xl mb-6 border-l-4 border-[#591F00]">
+        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Drivers heading to {myDestination}:</p>
+      </div>
+      <div className="space-y-3">
+        {availableDrivers.length > 0 ? (
+          availableDrivers.map(d => (
+            <div key={d.id} className="p-4 bg-white shadow-md border border-gray-100 rounded-2xl flex justify-between items-center animate-in slide-in-from-bottom-2">
+              <div className="w-2/3">
+                <div className="flex items-center gap-2">
+                   <p className="font-bold text-gray-800">{d.full_name}</p>
+                   <span className="text-[9px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-black uppercase">{d.transport_type}</span>
+                </div>
+                <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">From: {d.current_landmark}</p>
+                <p className="text-xs text-orange-500 font-bold mt-1">{d.available_seats} seats left</p>
+              </div>
+              <button 
+                onClick={() => handleJoinRide(d)}
+                disabled={joinLoading === d.id}
+                className="bg-[#F4A300] text-black px-5 py-2 rounded-xl text-xs font-black shadow-sm"
+              >
+                {joinLoading === d.id ? "..." : "JOIN"}
+              </button>
+            </div>
+          ))
+        ) : (
+          <div className="text-center py-10 text-gray-400 italic">No drivers heading to {myDestination} yet...</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- MAIN APP ---
+function App() {
+  const [user, setUser] = useState(null);
+  const [landmarks, setLandmarks] = useState([]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null));
+    const getLandmarks = async () => {
+      const { data } = await supabase.from('landmarks').select('*');
+      setLandmarks(data || []);
+    };
+    getLandmarks();
+  }, []);
+
+  if (user) {
+    const role = user.user_metadata?.role;
+    return (
+      <div className="min-h-screen bg-gray-100">
+        <header className="p-4 bg-[#591F00] text-white flex justify-between items-center shadow-md border-b-4 border-[#F4A300]">
+          <h1 className="font-bold tracking-tighter italic">CUSTECH RIDE</h1>
+          <button onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }} className="text-[10px] border border-white/30 px-3 py-1 rounded-lg font-bold">LOGOUT</button>
+        </header>
+        <main>{role === 'driver' ? <DriverDashboard user={user} landmarks={landmarks} /> : <StudentDashboard user={user} landmarks={landmarks} />}</main>
+      </div>
+    );
+  }
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<AuthPage role="student" title="STUDENT PORTAL" primaryColor="#591F00" accentColor="#F4A300" />} />
+        <Route path="/driver-auth" element={<AuthPage role="driver" title="DRIVER PORTAL" primaryColor="#111827" accentColor="#F4A300" />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+
+
+APP.CSS FILE
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+
+MAIN.JSX FILE
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+import './index.css'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+
+INDEX.CSS FILE
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* Add this to your index.css */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px white inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
